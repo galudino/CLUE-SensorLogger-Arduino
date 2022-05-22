@@ -4,75 +4,102 @@
 
     \author   Adafruit, Gemuele Aludino
     \date     22 May 2022
+
+    This is an example for our nRF52 based Bluefruit LE modules
+
+    Pick one up today in the adafruit shop!
+
+    Adafruit invests time and resources providing this open source code,
+    please support Adafruit and open-source hardware by purchasing
+    products from Adafruit!
+
+    MIT license, check LICENSE for more information
+    All text above, and the splash screen below must be included in
+    any redistribution
+
+    This sketch demonstrate the BLE Adafruit Service that is used with
+    "Adafruit Bluefruit Playground" app. Supported boards are
+    - Circuit Playground Bluefruit : https://www.adafruit.com/product/4333
+    - CLUE nRF52840 : https://www.adafruit.com/product/4500
+    - Feather Sense : https://www.adafruit.com/product/4516
  */
 
-/*********************************************************************
- This is an example for our nRF52 based Bluefruit LE modules
-
- Pick one up today in the adafruit shop!
-
- Adafruit invests time and resources providing this open source code,
- please support Adafruit and open-source hardware by purchasing
- products from Adafruit!
-
- MIT license, check LICENSE for more information
- All text above, and the splash screen below must be included in
- any redistribution
-*********************************************************************/
-
-/* 
- * This sketch demonstrate the BLE Adafruit Service that is used with
- * "Adafruit Bluefruit Playground" app. Supported boards are
- *  - Circuit Playground Bluefruit : https://www.adafruit.com/product/4333
- *  - CLUE nRF52840 : https://www.adafruit.com/product/4500
- *  - Feather Sense : https://www.adafruit.com/product/4516
- */
-
-#include <Adafruit_LittleFS.h>
-#include <BLEAdafruitService.h>
-#include <InternalFileSystem.h>
-#include <PDM.h>
-#include <SPI.h>
-#include <SdFat.h>
-#include <bluefruit.h>
+#include "Adafruit_LittleFS.h"
+#include "BLEAdafruitService.h"
+#include "InternalFileSystem.h"
+#include "PDM.h"
+#include "SPI.h"
+#include "SdFat.h"
+#include "bluefruit.h"
 
 #include <array>
 #include <memory>
 
-//------------- Circuit Playground Bluefruit -------------//
+template <typename T>
+constexpr void unused(const T &arg) { (void)(arg); }
+
+/*!
+    Circuit Playground Bluefruit
+ */
 #if defined(ARDUINO_NRF52840_CIRCUITPLAY)
 
-#include <Adafruit_CircuitPlayground.h>
+///
+/// Includes
+///
 
-#define DEVICE_NAME "CPlay"
-#define NEOPIXEL_COUNT 10
+#include <Adafruit_CircuitPlayground.h
+
+///
+/// Prototypes
+///
+
+uint16_t measure_temperature(uint8_t *buf, uint16_t bufsize);
+uint16_t measure_light(uint8_t *buf, uint16_t bufsize);
+uint16_t measure_button(uint8_t *buf, uint16_t bufsize);
+
+///
+/// Globals
+///
+
+constexpr auto DEVICE_NAME = "CPlay"
+constexpr auto NEOPIXEL_COUNT = 10
+
+///
+/// Implementation
+///
 
 uint16_t measure_temperature(uint8_t *buf, uint16_t bufsize) {
-    float temp = CircuitPlayground.temperature();
-    memcpy(buf, &temp, 4);
+    auto temp = CircuitPlayground.temperature();
+    std::copy(&temp, &temp + 1, buf);
     return 4;
 }
 
 uint16_t measure_light(uint8_t *buf, uint16_t bufsize) {
-    float lux;
+    auto lux = float{};
     lux = CircuitPlayground.lightSensor();
-    memcpy(buf, &lux, 4);
+    std::copy(&lux, &lux + 1, buf);
     return 4;
 }
 
 uint16_t measure_button(uint8_t *buf, uint16_t bufsize) {
-    uint32_t button = 0;
+    auto button = uint32_t{};
 
     button |= (CircuitPlayground.slideSwitch() ? 0x01 : 0x00);
     button |= (CircuitPlayground.leftButton() ? 0x02 : 0x00);
     button |= (CircuitPlayground.rightButton() ? 0x04 : 0x00);
 
-    memcpy(buf, &button, 4);
+    std::copy(&button, &button + 1, buf);
     return 4;
 }
 
-//------------- CLUE & Feather Sense -------------//
+/*!
+    CLUE & Feather Sense
+ */
 #elif defined(ARDUINO_NRF52840_CLUE) || defined(ARDUINO_NRF52840_FEATHER_SENSE)
+
+///
+/// Includes
+/// 
 
 #include <Adafruit_APDS9960.h>
 #include <Adafruit_BMP280.h>
@@ -84,27 +111,47 @@ uint16_t measure_button(uint8_t *buf, uint16_t bufsize) {
 #include <Adafruit_SPIFlash.h>
 #include <Adafruit_Sensor_Calibration.h>
 
+///
+/// Prototypes
+///
+
+void light_enable_callback(uint16_t conn_hdl, bool enabled);
+uint16_t measure_light(uint8_t *buf, uint16_t bufsize);
+
+void color_enable_callback(uint16_t conn_hdl, bool enabled);
+uint16_t measure_color(uint8_t *buf, uint16_t bufsize);
+
+void gesture_enable_callback(uint16_t conn_hdl, bool enabled);
+uint16_t measure_gesture(uint8_t *buf, uint16_t bufsize);
+
+void proximity_enable_callback(uint16_t conn_hdl, bool enabled);
+uint16_t measure_proximity(uint8_t *buf, uint16_t bufsize);
+
+///
+/// Globals
+///
+
 #if defined(ARDUINO_NRF52840_CLUE)
-#define DEVICE_NAME "CLUE"
+constexpr auto DEVICE_NAME = "CLUE";
 #else
-#define DEVICE_NAME "Sense"
+constexpr auto DEVICE_NAME = "Sense";
 #endif
 
 constexpr auto NEOPIXEL_COUNT = 1;
 
-auto bleBaro = BLEAdafruitBaro{};
-auto bleColor = BLEAdafruitColor{};
-auto bleGesture = BLEAdafruitGesture{};
-auto bleHumid = BLEAdafruitHumid{};
-auto bleProximity = BLEAdafruitProximity{};
-auto bleQuater = BLEAdafruitQuaternion{};
+auto ble_baro = BLEAdafruitBaro{};
+auto ble_color = BLEAdafruitColor{};
+auto ble_gesture = BLEAdafruitGesture{};
+auto ble_humid = BLEAdafruitHumid{};
+auto ble_proximity = BLEAdafruitProximity{};
+auto ble_quarternion = BLEAdafruitQuaternion{};
 
-auto barometerService = BLEService(BLEAdafruitBaro::UUID128_SERVICE);
-auto colorService = BLEService(BLEAdafruitColor::UUID128_SERVICE);
-auto gestureService = BLEService(BLEAdafruitGesture::UUID128_SERVICE);
-auto humidityService = BLEService(BLEAdafruitHumid::UUID128_SERVICE);
-auto proximityService = BLEService(BLEAdafruitProximity::UUID128_SERVICE);
-auto quaternionService = BLEService(BLEAdafruitQuaternion::UUID128_SERVICE);
+auto barometer_service = BLEService(BLEAdafruitBaro::UUID128_SERVICE);
+auto color_service = BLEService(BLEAdafruitColor::UUID128_SERVICE);
+auto gesture_service = BLEService(BLEAdafruitGesture::UUID128_SERVICE);
+auto humidity_service = BLEService(BLEAdafruitHumid::UUID128_SERVICE);
+auto proximity_service = BLEService(BLEAdafruitProximity::UUID128_SERVICE);
+auto quaternion_service = BLEService(BLEAdafruitQuaternion::UUID128_SERVICE);
 
 auto lsm6ds33 = Adafruit_LSM6DS33{}; // Gyro and Accel
 auto lis3mdl = Adafruit_LIS3MDL{};   // Magnetometer
@@ -121,36 +168,13 @@ auto filter = Adafruit_Mahony{}; // fastest/smallest
 constexpr auto FILE_SENSOR_CALIB = "sensor_calib.json";
 auto cal = Adafruit_Sensor_Calibration_SDFat{};
 
-auto flashTransport = Adafruit_FlashTransport_QSPI{};
-auto flash = Adafruit_SPIFlash(&flashTransport);
+auto flash_transport = Adafruit_FlashTransport_QSPI{};
+auto flash = Adafruit_SPIFlash(&flash_transport);
 auto fatfs = FatFileSystem{};
 
-template <typename T>
-constexpr void unused(const T &arg) { (void)(arg); }
-
-void light_enable_callback(uint16_t conn_hdl, bool enabled);
-uint16_t measure_light(uint8_t *buf, uint16_t bufsize);
-
-void color_enable_callback(uint16_t conn_hdl, bool enabled);
-uint16_t measure_color(uint8_t *buf, uint16_t bufsize);
-
-void gesture_enable_callback(uint16_t conn_hdl, bool enabled);
-uint16_t measure_gesture(uint8_t *buf, uint16_t bufsize);
-
-void proximity_enable_callback(uint16_t conn_hdl, bool enabled);
-uint16_t measure_proximity(uint8_t *buf, uint16_t bufsize);
-
-uint16_t measure_button(uint8_t *buf, uint16_t bufsize);
-uint16_t measure_humid(uint8_t *buf, uint16_t bufsize);
-
-uint16_t measure_sound(uint8_t *buf, uint16_t bufsize);
-
-void setup();
-void loop();
-void startAdv(void);
-void connect_callback(uint16_t conn_handle);
-void disconnect_callback(uint16_t conn_handle, uint8_t reason);
-void onPDMdata();
+///
+/// Implementation
+///
 
 void light_enable_callback(uint16_t conn_hdl, bool enabled) {
     unused(conn_hdl);
@@ -167,7 +191,8 @@ uint16_t measure_light(uint8_t *buf, uint16_t bufsize) {
     apds9960.getColorData(&color.r, &color.g, &color.b, &color.c);
 
     auto lux = static_cast<float>(color.c);
-    std::copy(&lux, &lux + 4, buf);
+    std::copy(&lux, &lux + 1, buf);
+
     return 4;
 }
 
@@ -181,13 +206,13 @@ void color_enable_callback(uint16_t conn_hdl, bool enabled) {
 }
 
 uint16_t measure_color(uint8_t *buf, uint16_t bufsize) {
-    uint16_t rgb[3];
-    uint16_t c;
+    auto rgb = std::array<uint16_t, 3>{};
+    auto c = uint16_t{};
     unused(c);
 
-    apds9960.getColorData(rgb + 0, rgb + 1, rgb + 2, &c);
+    apds9960.getColorData(rgb.data() + 0, rgb.data() + 1, rgb.data() + 2, &c);
 
-    memcpy(buf, rgb, sizeof(rgb));
+    std::copy(rgb.begin(), rgb.end(), buf);
     return sizeof(rgb);
 }
 
@@ -198,13 +223,15 @@ void gesture_enable_callback(uint16_t conn_hdl, bool enabled) {
 }
 
 uint16_t measure_gesture(uint8_t *buf, uint16_t bufsize) {
-    uint8_t gesture = apds9960.readGesture();
-    if (gesture == 0)
+    auto gesture = apds9960.readGesture();
+
+    if (gesture == 0) {
         return 0; // skip no gesture value
+    }
 
     // APDS9960 sensor position is rotated 90 degree left on CLUE
     // We will need to correct that by rotating right for user convenience
-    uint8_t const clue_rotation[] = {0, APDS9960_LEFT, APDS9960_RIGHT,
+    auto clue_rotation = std::array<uint8_t, 5>{0, APDS9960_LEFT, APDS9960_RIGHT,
                                      APDS9960_DOWN, APDS9960_UP};
     buf[0] = clue_rotation[gesture];
 
@@ -218,10 +245,10 @@ void proximity_enable_callback(uint16_t conn_hdl, bool enabled) {
 
 uint16_t measure_proximity(uint8_t *buf, uint16_t bufsize) {
     // APDS is only 8-bit, we better to map it to 16-bit value
-    uint8_t data8 = apds9960.readProximity();
-    uint16_t data16 = (uint16_t)map(data8, 0, UINT8_MAX, 0, UINT16_MAX);
+    auto data8 = apds9960.readProximity();
+    auto data16 = static_cast<uint16_t>(map(data8, 0, UINT8_MAX, 0, UINT16_MAX));
 
-    memcpy(buf, &data16, 2);
+    std::copy(&data16, &data16 + 1, buf);
     return 2;
 }
 
@@ -229,18 +256,18 @@ uint16_t measure_button(uint8_t *buf, uint16_t bufsize) {
     // Button is active LOW on most board except CPlay
     // No slide switch
 
-    uint32_t button = 0;
+    auto button = uint32_t{};
     button |= (digitalRead(PIN_BUTTON1) ? 0x00 : 0x02);
 #if defined(PIN_BUTTON2)
     button |= (digitalRead(PIN_BUTTON2) ? 0x00 : 0x04);
 #endif
-    memcpy(buf, &button, 4);
+    std::copy(&button, &button + 1, buf);
     return 4;
 }
 
 uint16_t measure_humid(uint8_t *buf, uint16_t bufsize) {
-    float humid = sht30.readHumidity();
-    memcpy(buf, &humid, 4);
+    auto humid = sht30.readHumidity();
+    std::copy(&humid, &humid + 1, buf);
     return 4;
 }
 
@@ -249,62 +276,77 @@ uint16_t measure_humid(uint8_t *buf, uint16_t bufsize) {
 
 #endif // end of board
 
-//--------------------------------------------------------------------+
-// Common for all Boards
-//--------------------------------------------------------------------+
+/*!
+    Common for all boards
+ */
+
+///
+/// Prototypes
+///
+
+uint16_t measure_button(uint8_t *buf, uint16_t bufsize);
+uint16_t measure_humid(uint8_t *buf, uint16_t bufsize);
+uint16_t measure_sound(uint8_t *buf, uint16_t bufsize);
+
+void on_pdm_data();
+void pdm_plotter(uint16_t count);
+
+void start_advertising(void);
+void connect_callback(uint16_t conn_handle);
+void disconnect_callback(uint16_t conn_handle, uint8_t reason);
+
+///
+/// Globals
+///
 
 // BLE Service
-BLEDfu bledfu;   // OTA DFU service
-BLEDis bledis;   // device information
-BLEUart bleuart; // uart over ble
-BLEBas blebas;   // battery
+auto ble_dfu = BLEDfu{};   // OTA DFU service
+auto ble_dis = BLEDis{};   // device information
+auto ble_uart = BLEUart{}; // uart over ble
+auto ble_bas = BLEBas{};   // battery
 
-// Adafruit Service: ADAFxx-C332-42A8-93BD-25E905756CB8
-BLEAdafruitTemperature bleTemp;
-BLEAdafruitAccel bleAccel;
-BLEAdafruitLightSensor bleLight;
-BLEAdafruitButton bleButton;
-BLEAdafruitTone bleTone;
-BLEAdafruitAddressablePixel blePixel;
-BLEAdafruitSound bleSound;
+// Adafruit Service: ADAFxxxx-C332-42A8-93BD-25E905756CB8
+inline std::string adafruit_uuid(const std::string &unique_portion) {
+    return std::string{"ADAF-" + unique_portion + "C332-42A8-93BD-25E905756CB8"};
+}
 
-Adafruit_NeoPixel strip =
-    Adafruit_NeoPixel(NEOPIXEL_COUNT, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
-int16_t pdmSample[256]; // sound samples
-uint16_t pdmByteCount = 0;
+auto ble_temperature = BLEAdafruitTemperature{};
+auto ble_accelerometer = BLEAdafruitAccel{};
+auto ble_light = BLEAdafruitLightSensor{};
+auto ble_button = BLEAdafruitButton{};
+auto ble_tone = BLEAdafruitTone{};
+auto ble_pixel = BLEAdafruitAddressablePixel{};
+auto ble_sound = BLEAdafruitSound{};
 
-// void pdm_plotter(uint16_t count)
-//{
-//   for (int i = 0; i < count/2; i++) Serial.println(pdmSample[i]);
-// }
+auto strip =
+    Adafruit_NeoPixel{NEOPIXEL_COUNT, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800};
+auto pdm_sample = std::array<int16_t, 256>{};  // sound samples
+auto pdm_byte_count = uint16_t{};
 
 uint16_t measure_sound(uint8_t *buf, uint16_t bufsize) {
-    uint16_t const len = min(bufsize, pdmByteCount);
+    const auto len = min(bufsize, pdm_byte_count);
 
-    if (len)
-        memcpy(buf, pdmSample, len);
-    pdmByteCount = 0; // clear count
+    if (len) {
+        std::copy(pdm_sample.begin(), pdm_sample.end(), buf);
+    }
 
-    //  if (len) ada_callback(NULL, 0, pdm_plotter, len);
+    pdm_byte_count = 0; // clear count
+
+    // if (len) { ada_callback(NULL, 0, pdm_plotter, len); }
 
     return len;
 }
 
-//--------------------------------------------------------------------+
-// Codes
-//--------------------------------------------------------------------+
 void setup() {
-    Adafruit_Sensor *accel_sensor;
+    Adafruit_Sensor *accel_sensor = nullptr;
 
     Serial.begin(115200);
-    //  while(!Serial) delay(10); // wait for native USB
+    // while(!Serial) { delay(10); }// wait for native USB
 
 #if defined ARDUINO_NRF52840_CIRCUITPLAY
     CircuitPlayground.begin();
-
     accel_sensor = &CircuitPlayground.lis;
 #else
-
     // Button
     pinMode(PIN_BUTTON1, INPUT_PULLUP);
 #if defined(PIN_BUTTON2)
@@ -348,7 +390,7 @@ void setup() {
 #endif
 
     // 1 channel (mono mode) with 16 kHz sample rate
-    PDM.onReceive(onPDMdata);
+    PDM.onReceive(on_pdm_data);
     PDM.begin(1, 16000);
 
     Serial.println("Bluefruit Playground Example");
@@ -371,31 +413,31 @@ void setup() {
     Bluefruit.Periph.setDisconnectCallback(disconnect_callback);
 
     // To be consistent OTA DFU should be added first if it exists
-    bledfu.begin();
+    ble_dfu.begin();
 
     // Configure and Start Device Information Service
-    bledis.setManufacturer("Adafruit Industries");
-    bledis.begin();
+    ble_dis.setManufacturer("Adafruit Industries");
+    ble_dis.begin();
 
     // Configure and Start BLE Uart Service
-    bleuart.begin();
+    ble_uart.begin();
 
     // Start BLE Battery Service
-    blebas.begin();
-    blebas.write(100);
+    ble_bas.begin();
+    ble_bas.write(100);
 
     //------------- Adafruit Service -------------//
-    bleAccel.begin(
+    ble_accelerometer.begin(
         accel_sensor,
         100); // TODO dropped in favor to Quaternion service for CLUE & Sense
 
-    bleButton.begin(measure_button, 100);
-    bleButton.setPeriod(0); // only notify if there is changes with buttons
+    ble_button.begin(measure_button, 100);
+    ble_button.setPeriod(0); // only notify if there is changes with buttons
 
     strip.begin();
-    blePixel.begin(&strip);
+    ble_pixel.begin(&strip);
 
-    bleSound.begin(1, measure_sound, 100);
+    ble_sound.begin(1, measure_sound, 100);
 
     // CPB doesn't support these on-board sensor
 #ifdef ARDUINO_NRF52840_CIRCUITPLAY
@@ -403,37 +445,36 @@ void setup() {
     bleTemp.begin(measure_temperature, 100);
 
 #else
-    bleBaro.begin(bmp280.getPressureSensor(), 100);
+    ble_baro.begin(bmp280.getPressureSensor(), 100);
 
-    bleColor.begin(measure_color, 100);
-    bleColor.setNotifyCallback(color_enable_callback);
+    ble_color.begin(measure_color, 100);
+    ble_color.setNotifyCallback(color_enable_callback);
 
-    bleGesture.begin(measure_gesture, 10); // sampling is 10 ms
-    bleGesture.setPeriod(0);               // notify on changes only
-    bleGesture.setNotifyCallback(gesture_enable_callback);
+    ble_gesture.begin(measure_gesture, 10); // sampling is 10 ms
+    ble_gesture.setPeriod(0);               // notify on changes only
+    ble_gesture.setNotifyCallback(gesture_enable_callback);
 
-    bleHumid.begin(measure_humid, 100);
+    ble_humid.begin(measure_humid, 100);
 
-    bleLight.begin(measure_light, 100);
-    ;
-    bleLight.setNotifyCallback(light_enable_callback);
+    ble_light.begin(measure_light, 100);
+    ble_light.setNotifyCallback(light_enable_callback);
 
-    bleProximity.begin(measure_proximity, 100);
-    bleProximity.setNotifyCallback(proximity_enable_callback);
+    ble_proximity.begin(measure_proximity, 100);
+    ble_proximity.setNotifyCallback(proximity_enable_callback);
 
     // Quaternion with sensor calibration
-    bleQuater.begin(&filter, accel_sensor, lsm6ds33.getGyroSensor(), &lis3mdl);
-    bleQuater.setCalibration(&cal);
+    ble_quarternion.begin(&filter, accel_sensor, lsm6ds33.getGyroSensor(), &lis3mdl);
+    ble_quarternion.setCalibration(&cal);
 
-    bleTemp.begin(bmp280.getTemperatureSensor(), 100);
+    ble_temperature.begin(bmp280.getTemperatureSensor(), 100);
 #endif
 
 #if defined(PIN_BUZZER)
-    bleTone.begin(PIN_BUZZER);
+    ble_tone.begin(PIN_BUZZER);
 #endif
 
     // Set up and start advertising
-    startAdv();
+    start_advertising();
 
     Serial.println(
         "Please use Adafruit's Bluefruit LE app to connect in UART mode");
@@ -442,17 +483,31 @@ void setup() {
 
 void loop() {}
 
-void startAdv(void) {
+void on_pdm_data() {
+    // query the number of bytes available
+    pdm_byte_count = PDM.available();
+
+    // read into the sample buffer
+    PDM.read(pdm_sample.data(), pdm_byte_count);
+}
+
+void pdm_plotter(uint16_t count) {
+    for (int i = 0; i < count / 2; i++) { 
+        Serial.println(pdm_sample[i]); 
+    }
+}
+
+void start_advertising(void) {
     // Advertising packet
     Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
 
     // Advertising with only board ID
     struct ATTR_PACKED {
-        uint16_t mfr_id;
+        uint16_t mfr_id{};
 
-        uint8_t field_len;
-        uint16_t field_key;
-        uint16_t field_value;
+        uint8_t field_len{};
+        uint16_t field_key{};
+        uint16_t field_value{};
     } mfr_adv;
 
     mfr_adv.mfr_id = UUID16_COMPANY_ID_ADAFRUIT;
@@ -466,50 +521,54 @@ void startAdv(void) {
     Bluefruit.Advertising.addName();
 
     // Add services for advertising
-    Bluefruit.Advertising.addService(barometerService);
-    Bluefruit.Advertising.addService(colorService);
-    Bluefruit.Advertising.addService(gestureService);
-    Bluefruit.Advertising.addService(humidityService);
-    Bluefruit.Advertising.addService(proximityService);
-    Bluefruit.Advertising.addService(quaternionService);
+    Bluefruit.Advertising.addService(barometer_service);
+    Bluefruit.Advertising.addService(color_service);
+    Bluefruit.Advertising.addService(gesture_service);
+    Bluefruit.Advertising.addService(humidity_service);
+    Bluefruit.Advertising.addService(proximity_service);
+    Bluefruit.Advertising.addService(quaternion_service);
 
-    /* Start Advertising
-     * - Enable auto advertising if disconnected
-     * - Interval:  fast mode = 20 ms, slow mode = 152.5 ms
-     * - Timeout for fast mode is 30 seconds
-     * - Start(timeout) with timeout = 0 will advertise forever (until
-     * connected)
-     *
-     * For recommended advertising interval
-     * https://developer.apple.com/library/content/qa/qa1931/_index.html
+    /*! 
+        Start Advertising
+        - Enable auto advertising if disconnected
+        - Interval:  fast mode = 20 ms, slow mode = 152.5 ms
+        - Timeout for fast mode is 30 seconds
+        - Start(timeout) with timeout = 0 will advertise forever (until connected)
+     
+        For recommended advertising interval
+        https://developer.apple.com/library/content/qa/qa1931/_index.html
      */
     Bluefruit.Advertising.restartOnDisconnect(true);
     Bluefruit.Advertising.setInterval(32, 244); // in unit of 0.625 ms
-    Bluefruit.Advertising.setFastTimeout(30); // number of seconds in fast mode
-    Bluefruit.Advertising.start(
-        0); // 0 = Don't stop advertising after n seconds
+    Bluefruit.Advertising.setFastTimeout(30);   // number of seconds in fast mode
+    Bluefruit.Advertising.start(0); 
+    // 0 = Don't stop advertising after n seconds
 }
 
-// callback invoked when central connects
+/*!
+    \brief  Callback invoked when central connects
+    \param  conn_handle connection where this event happens
+ */
 void connect_callback(uint16_t conn_handle) {
     // Get the reference to current connection
-    BLEConnection *connection = Bluefruit.Connection(conn_handle);
+    auto connection = Bluefruit.Connection(conn_handle);
 
-    char central_name[32] = {0};
-    connection->getPeerName(central_name, sizeof(central_name));
+    auto central_name = std::array<char, 32>{};
+    connection->getPeerName(central_name.data(), sizeof(central_name));
 
     Serial.print("Connected to ");
-    Serial.println(central_name);
+    Serial.println(central_name.data());
 }
 
-/**
- * Callback invoked when a connection is dropped
- * @param conn_handle connection where this event happens
- * @param reason is a BLE_HCI_STATUS_CODE which can be found in ble_hci.h
+/*!
+    \brief  Callback invoked when a connection is dropped
+
+    \param  conn_handle connection where this event happens
+    \param  reason  is a BLE_HCI_STATUS_CODE whic hcan be found in `ble_hci.h`
  */
 void disconnect_callback(uint16_t conn_handle, uint8_t reason) {
-    (void)conn_handle;
-    (void)reason;
+    unused(conn_handle);
+    unused(reason);
 
 #if defined(ARDUINO_NRF52840_CLUE) || defined(ARDUINO_NRF52840_FEATHER_SENSE)
     apds9960.enableGesture(false);
@@ -524,12 +583,4 @@ void disconnect_callback(uint16_t conn_handle, uint8_t reason) {
     Serial.println();
     Serial.print("Disconnected, reason = 0x");
     Serial.println(reason, HEX);
-}
-
-void onPDMdata() {
-    // query the number of bytes available
-    pdmByteCount = PDM.available();
-
-    // read into the sample buffer
-    PDM.read(pdmSample, pdmByteCount);
 }
