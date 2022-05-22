@@ -1,14 +1,10 @@
 /*!
-    \file       main.cpp
-    \brief
+    \file     SensorLogger.ino
+    \brief    bluefruit_playground.ino, modified
 
-    \author     Gemuele Aludino
-    \date       01 May 2022
+    \author   Adafruit, Gemuele Aludino
+    \date     22 May 2022
  */
-
-#include "sensor_logger.hpp"
-
-#include <Arduino.h>
 
 /*********************************************************************
  This is an example for our nRF52 based Bluefruit LE modules
@@ -24,7 +20,8 @@
  any redistribution
 *********************************************************************/
 
-/* This sketch demonstrate the BLE Adafruit Service that is used with
+/* 
+ * This sketch demonstrate the BLE Adafruit Service that is used with
  * "Adafruit Bluefruit Playground" app. Supported boards are
  *  - Circuit Playground Bluefruit : https://www.adafruit.com/product/4333
  *  - CLUE nRF52840 : https://www.adafruit.com/product/4500
@@ -39,11 +36,8 @@
 #include <SdFat.h>
 #include <bluefruit.h>
 
-/// Forward declarations
-void onPDMdata();
-void connect_callback(uint16_t conn_handle);
-void disconnect_callback(uint16_t conn_handle, uint8_t reason);
-void startAdv(void);
+#include <array>
+#include <memory>
 
 //------------- Circuit Playground Bluefruit -------------//
 #if defined(ARDUINO_NRF52840_CIRCUITPLAY)
@@ -96,53 +90,89 @@ uint16_t measure_button(uint8_t *buf, uint16_t bufsize) {
 #define DEVICE_NAME "Sense"
 #endif
 
-#define NEOPIXEL_COUNT 1
+constexpr auto NEOPIXEL_COUNT = 1;
 
-BLEAdafruitBaro bleBaro;
-BLEAdafruitColor bleColor;
-BLEAdafruitGesture bleGesture;
-BLEAdafruitHumid bleHumid;
-BLEAdafruitProximity bleProximity;
-BLEAdafruitQuaternion bleQuater;
+auto bleBaro = BLEAdafruitBaro{};
+auto bleColor = BLEAdafruitColor{};
+auto bleGesture = BLEAdafruitGesture{};
+auto bleHumid = BLEAdafruitHumid{};
+auto bleProximity = BLEAdafruitProximity{};
+auto bleQuater = BLEAdafruitQuaternion{};
 
-Adafruit_LSM6DS33 lsm6ds33; // Gyro and Accel
-Adafruit_LIS3MDL lis3mdl;   // Magnetometer
-Adafruit_APDS9960 apds9960; // Proximity, Light, Gesture, Color
-Adafruit_BMP280 bmp280;     // Temperature, Barometric
-Adafruit_SHT31 sht30;       // Humid
+auto barometerService = BLEService(BLEAdafruitBaro::UUID128_SERVICE);
+auto colorService = BLEService(BLEAdafruitColor::UUID128_SERVICE);
+auto gestureService = BLEService(BLEAdafruitGesture::UUID128_SERVICE);
+auto humidityService = BLEService(BLEAdafruitHumid::UUID128_SERVICE);
+auto proximityService = BLEService(BLEAdafruitProximity::UUID128_SERVICE);
+auto quaternionService = BLEService(BLEAdafruitQuaternion::UUID128_SERVICE);
+
+auto lsm6ds33 = Adafruit_LSM6DS33{}; // Gyro and Accel
+auto lis3mdl = Adafruit_LIS3MDL{};   // Magnetometer
+auto apds9960 = Adafruit_APDS9960{}; // Proximity, Light, Gesture, Color
+auto bmp280 = Adafruit_BMP280{};     // Temperature, Barometric
+auto sht30 = Adafruit_SHT31{};       // Humid
 
 // pick your filter! slower == better quality output
-// Adafruit_NXPSensorFusion filter; // slowest
-// Adafruit_Madgwick filter;  // faster than NXP
-Adafruit_Mahony filter; // fastest/smalleset
+// auto filter = Adafruit_NXPSensorFusion{}; // slowest
+// auto filter = Adafruit_Madgwick{};  // faster than NXP
+auto filter = Adafruit_Mahony{}; // fastest/smallest
 
 // Sensor calibration
-#define FILE_SENSOR_CALIB "sensor_calib.json"
-Adafruit_Sensor_Calibration_SDFat cal;
+constexpr auto FILE_SENSOR_CALIB = "sensor_calib.json";
+auto cal = Adafruit_Sensor_Calibration_SDFat{};
 
-Adafruit_FlashTransport_QSPI flashTransport;
-Adafruit_SPIFlash flash(&flashTransport);
-FatFileSystem fatfs;
+auto flashTransport = Adafruit_FlashTransport_QSPI{};
+auto flash = Adafruit_SPIFlash(&flashTransport);
+auto fatfs = FatFileSystem{};
+
+template <typename T>
+constexpr void unused(const T &arg) { (void)(arg); }
+
+void light_enable_callback(uint16_t conn_hdl, bool enabled);
+uint16_t measure_light(uint8_t *buf, uint16_t bufsize);
+
+void color_enable_callback(uint16_t conn_hdl, bool enabled);
+uint16_t measure_color(uint8_t *buf, uint16_t bufsize);
+
+void gesture_enable_callback(uint16_t conn_hdl, bool enabled);
+uint16_t measure_gesture(uint8_t *buf, uint16_t bufsize);
+
+void proximity_enable_callback(uint16_t conn_hdl, bool enabled);
+uint16_t measure_proximity(uint8_t *buf, uint16_t bufsize);
+
+uint16_t measure_button(uint8_t *buf, uint16_t bufsize);
+uint16_t measure_humid(uint8_t *buf, uint16_t bufsize);
+
+uint16_t measure_sound(uint8_t *buf, uint16_t bufsize);
+
+void setup();
+void loop();
+void startAdv(void);
+void connect_callback(uint16_t conn_handle);
+void disconnect_callback(uint16_t conn_handle, uint8_t reason);
+void onPDMdata();
 
 void light_enable_callback(uint16_t conn_hdl, bool enabled) {
-    (void)conn_hdl;
-    apds9960.enableColor(enabled);
+    unused(conn_hdl);
 }
 
 uint16_t measure_light(uint8_t *buf, uint16_t bufsize) {
-    float lux;
-    uint16_t r, g, b, c;
+    struct {
+      uint16_t r{};
+      uint16_t g{};
+      uint16_t b{};
+      uint16_t c{};
+    } color;
 
-    apds9960.getColorData(&r, &g, &b, &c);
+    apds9960.getColorData(&color.r, &color.g, &color.b, &color.c);
 
-    lux = c;
-    memcpy(buf, &lux, 4);
+    auto lux = static_cast<float>(color.c);
+    std::copy(&lux, &lux + 4, buf);
     return 4;
 }
 
 void color_enable_callback(uint16_t conn_hdl, bool enabled) {
-    (void)conn_hdl;
-
+    unused(conn_hdl);
     apds9960.enableColor(enabled);
 
 #ifdef ARDUINO_NRF52840_CLUE
@@ -153,7 +183,7 @@ void color_enable_callback(uint16_t conn_hdl, bool enabled) {
 uint16_t measure_color(uint8_t *buf, uint16_t bufsize) {
     uint16_t rgb[3];
     uint16_t c;
-    (void)c;
+    unused(c);
 
     apds9960.getColorData(rgb + 0, rgb + 1, rgb + 2, &c);
 
@@ -162,7 +192,7 @@ uint16_t measure_color(uint8_t *buf, uint16_t bufsize) {
 }
 
 void gesture_enable_callback(uint16_t conn_hdl, bool enabled) {
-    (void)conn_hdl;
+    unused(conn_hdl);
     apds9960.enableProximity(enabled);
     apds9960.enableGesture(enabled);
 }
@@ -182,7 +212,7 @@ uint16_t measure_gesture(uint8_t *buf, uint16_t bufsize) {
 }
 
 void proximity_enable_callback(uint16_t conn_hdl, bool enabled) {
-    (void)conn_hdl;
+    unused(conn_hdl);
     apds9960.enableProximity(enabled);
 }
 
@@ -410,6 +440,8 @@ void setup() {
     Serial.println("Once connected, enter character(s) that you wish to send");
 }
 
+void loop() {}
+
 void startAdv(void) {
     // Advertising packet
     Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
@@ -433,6 +465,14 @@ void startAdv(void) {
     // Add name to advertising, since there is enough room
     Bluefruit.Advertising.addName();
 
+    // Add services for advertising
+    Bluefruit.Advertising.addService(barometerService);
+    Bluefruit.Advertising.addService(colorService);
+    Bluefruit.Advertising.addService(gestureService);
+    Bluefruit.Advertising.addService(humidityService);
+    Bluefruit.Advertising.addService(proximityService);
+    Bluefruit.Advertising.addService(quaternionService);
+
     /* Start Advertising
      * - Enable auto advertising if disconnected
      * - Interval:  fast mode = 20 ms, slow mode = 152.5 ms
@@ -449,8 +489,6 @@ void startAdv(void) {
     Bluefruit.Advertising.start(
         0); // 0 = Don't stop advertising after n seconds
 }
-
-void loop() {}
 
 // callback invoked when central connects
 void connect_callback(uint16_t conn_handle) {

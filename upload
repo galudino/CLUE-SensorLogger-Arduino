@@ -1,0 +1,22 @@
+#!/bin/sh
+
+##
+# Compiles and uploads SensorLogger to Adafruit CLUE
+##
+
+###
+# Run `adafruit-cli board list` to get your FQBN and PORT variables, 
+# then provide them here.
+### 
+FQBN="adafruit:nrf52:cluenrf52840"
+PORT="/dev/cu.usbmodem231101"
+
+## DO NOT EDIT BELOW THIS LINE
+
+SOURCE_DIR="SensorLogger"
+
+function main() {
+    arduino-cli compile $SOURCE_DIR -b $FQBN -u -p $PORT
+}
+
+main
